@@ -1,6 +1,6 @@
-%%
-%%  Simple data logger.
-%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%       Simple data logger.        %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(logserver).
 -author("Aaron France").
@@ -48,12 +48,15 @@ goState(State, N) ->
         {alive, Pid} ->
             Pid ! alive,
             goState(State, N);
-        count ->
-            io:format("~p~n",[N]),
+        {count, Pid} ->
+            Pid ! N,
             goState(State, N);
         clear ->
             io:format("Clearing ~p entry", [N]),
-            goState(dict:new(),0)
+            goState(dict:new(),0);
+        Something ->
+            io:format("~p~n", [Something]),
+            goState(State, N)
     end.
 
 %% Executes the server and monitors it's process.
@@ -94,4 +97,4 @@ addLotsOfData(Data, WhereAt, 0) ->
 addLotsOfData(Data, WhereAt, N) ->
     {Level, Host, Time, D} = Data,
     {server, WhereAt} ! {newlog, Level, Host, Time, D},
-    addData(Data, WhereAt, N-1).
+    addLotsOfData(Data, WhereAt, N-1).
