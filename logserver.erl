@@ -7,6 +7,10 @@
          addData/2]).
 
 run() ->
+    checkState(),
+    checkServer().
+
+checkState() ->
     {database, node()} ! {alive, self()},
     receive
         alive ->
@@ -14,8 +18,9 @@ run() ->
     after
         1000 ->
             register(database, spawn(?MODULE, goState, [orddict:new(), 0]))
-    end,
+    end.
 
+checkServer() ->
     {server, node()} ! {alive, self()},
     receive
         alive ->
@@ -23,7 +28,7 @@ run() ->
     after
         1000 ->
             spawn(?MODULE, goServer, [])
-    end.
+    end.    
 
 goState(State, N) ->
     receive
