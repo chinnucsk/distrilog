@@ -1,63 +1,71 @@
 -module(logserver).
 -author("Aaron France").
 -export([run/0,
-	 goServer/0,
-	 goState/2,
-	 server/0]).
+         goServer/0,
+         goState/2,
+         server/0,
+         addData/2]).
 
 run() ->
-    quit(server),
-    quit(database),
-    spawn(?MODULE, goServer, []),
-    register(database, spawn(?MODULE, goState, [orddict:new(),0])).
+    {database, node()} ! {alive, self()},
+    receive
+        alive ->
+            {database, node()} ! restart
+    after
+        1000 ->
+            register(database, spawn(?MODULE, goState, [orddict:new(), 0]))
+    end,
+
+    {server, node()} ! {alive, self()},
+    receive
+        alive ->
+            {server, node()} ! restart
+    after
+        1000 ->
+            spawn(?MODULE, goServer, [])
+    end.
 
 goState(State, N) ->
     receive
-
-	{addition, Data} ->
-	    orddict:store(N, Data, State),
-	    io:format("~p~n", [Data]),
-	    goState(State, N+1);
-
-	quit ->
-	    io:format("Here"),
-	    exit(self(), kill)
+        {addition, Data} ->
+            io:format("~p~n", [N]),
+            goState(orddict:store(N, Data, State), N+1);
+        restart ->
+            logserver:goState(State, N);
+        {alive, Pid} ->
+            Pid ! alive,
+            goState(State, N)
     end.
 
-quit(ProcessName) ->
-    Val = whereis(ProcessName),
-    if 
-	Val =/= undefined ->
-	    unregister(ProcessName);
-	true ->
-	    ok
-    end,
-    {ProcessName, node()} ! quit.
-
-
 goServer() ->
-
     process_flag(trap_exit, true),
     register(server, spawn_link(?MODULE, server, [])),
 
     receive
-	{"EXIT", Pid, _ } ->
-	    io:format("Catching crash on: ~p~n", [Pid]),
-	    goServer();
-	quit ->
-	    exit(self(), kill)
+        {'EXIT', Pid, restart } ->
+            io:format("Catching restart on: ~p~n", [Pid]),
+            logserver:goServer()
     end.
 
 server() ->
     receive
-	{newlog, Level, Host, Time, Data} ->
-	    io:format("~p\t~p\t~p\t~p\t~n", [Level, Host, Time, Data]),
-	    {database, node()} ! {addition, {Level, Host, Time, Data}},
-	    server();
-	{getlog, Return, Tag} ->
-	    io:format("Receive: ~p~nTag:~p~n", [Return, Tag]),
-	    server();
-	quit ->
-	    io:format("Closing connection..."),
-	    exit(whereis(server), kill)
+        {newlog, Level, Host, Time, Data} ->
+            {database, node()} ! {addition, {Level, Host, Time, Data}},
+            server();
+        {getlog, Return, Tag} ->
+            io:format("Receive: ~p~nTag:~p~n", [Return, Tag]),
+            server();
+        restart ->
+            exit(self(), restart);
+        {alive, Pid} ->
+            Pid ! alive,
+            server()
+    after
+        10000 ->
+            io:format("Polling..~n"),
+            server()
     end.
+
+addData(Data, WhereAt) ->
+    {Level, Host, Time, D} = Data,
+    {server, WhereAt} ! {newlog, Level, Host, Time, D}.
