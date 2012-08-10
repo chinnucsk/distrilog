@@ -1,47 +1,62 @@
+%%
+%%  Simple data logger.
+%%
+
 -module(logserver).
 -author("Aaron France").
 -export([run/0,
          goServer/0,
          goState/2,
          server/0,
-         addData/2]).
+         addLotsOfData/3]).
 
+%% Starts/Restarts our services
 run() ->
     checkState(),
     checkServer().
 
+%% checks the state of the database process, restarting it if it's
+%% active and starting/registering it if not.
 checkState() ->
     {database, node()} ! {alive, self()},
     receive
         alive ->
             {database, node()} ! restart
     after
-        1000 ->
-            register(database, spawn(?MODULE, goState, [orddict:new(), 0]))
+        10000 ->
+            register(database, spawn(?MODULE, goState, [dict:new(), 0]))
     end.
 
+%% Checks the server process, restarting it if need be.
 checkServer() ->
     {server, node()} ! {alive, self()},
     receive
         alive ->
             {server, node()} ! restart
     after
-        1000 ->
+        10000 ->
             spawn(?MODULE, goServer, [])
     end.    
 
+%% Starts the state loop.
 goState(State, N) ->
     receive
         {addition, Data} ->
-            io:format("~p~n", [N]),
-            goState(orddict:store(N, Data, State), N+1);
+            goState(dict:store(N, Data, State), N+1);
         restart ->
             logserver:goState(State, N);
         {alive, Pid} ->
             Pid ! alive,
-            goState(State, N)
+            goState(State, N);
+        count ->
+            io:format("~p~n",[N]),
+            goState(State, N);
+        clear ->
+            io:format("Clearing ~p entry", [N]),
+            goState(dict:new(),0)
     end.
 
+%% Executes the server and monitors it's process.
 goServer() ->
     process_flag(trap_exit, true),
     register(server, spawn_link(?MODULE, server, [])),
@@ -52,6 +67,7 @@ goServer() ->
             logserver:goServer()
     end.
 
+%% Server loop.
 server() ->
     receive
         {newlog, Level, Host, Time, Data} ->
@@ -71,6 +87,11 @@ server() ->
             server()
     end.
 
-addData(Data, WhereAt) ->
+
+%% test methods
+addLotsOfData(Data, WhereAt, 0) ->
+    Data;
+addLotsOfData(Data, WhereAt, N) ->
     {Level, Host, Time, D} = Data,
-    {server, WhereAt} ! {newlog, Level, Host, Time, D}.
+    {server, WhereAt} ! {newlog, Level, Host, Time, D},
+    addData(Data, WhereAt, N-1).
