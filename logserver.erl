@@ -9,17 +9,17 @@
 %% processes which watch their state.
 -export([run/0 ]).
 % Exported methods which shouldn't be called directly.
--export([goServer/0,goState/2,server/0]).
+-export([goServer/0,goState/1,server/0]).
 %% Usability methods.
--export([addLotsOfData/3,clear_database/1,clear_database/0,
-         codeswitch/1,codeswitch/0,quit/0,quit/1,count/0]).
+-export([addLotsOfData/3,codeswitch/1,codeswitch/0,
+         quit/0,quit/1,count/0]).
 
 -include("dbfuncs.erl").
 
 
 %% Starts/Restarts our services
 run() ->
-    init_table(database_log,[node()]),
+    init_table(database_log, [node()]),
     checkState(),
     checkServer().
 
@@ -31,8 +31,8 @@ checkState() ->
         alive ->
             {database, node()} ! restart
     after
-        100 ->
-            register(database, spawn(?MODULE, goState, [dict:new(), 0]))
+        1 ->
+            register(database, spawn(?MODULE, goState, [0]))
     end.
 
 %% Checks the server process, restarting it if need be.
@@ -42,39 +42,33 @@ checkServer() ->
         alive ->
             {server, node()} ! restart
     after
-        100 ->
+        1 ->
             spawn(?MODULE, goServer, [])
     end.    
 
 %% Starts the state loop.
-goState(State, N) ->
+goState(N) ->
     receive
         {addition, Data} ->
-            add_entry(Data),
-            goState(dict:store(N, Data, State), N+1);
+            add_entry(Data);
         {alive, Pid} ->
             Pid ! alive,
-            goState(State, N);
-        {count, Pid} ->
-            Pid ! N,
-            goState(State, N);
-        clear ->
-            io:format("Clearing ~p entries", [N]),
-            goState(dict:new(),0);
+            goState(N);
         restart ->
-            logserver:goState(State, N);
+            logserver:goState(N);
         quit ->
             ok
     end.
 
+%% Returns the highest ID in the database in use.
 count() ->
-    {database, node()} ! {count, self()},
+    {idproc, node()} ! {count, self()},
     receive
         N ->
             N
     after
-        1000 ->
-            no_database
+        1 ->
+            error
     end.
 
 %% Executes the server and monitors it's process.
@@ -97,8 +91,9 @@ server() ->
         {newlog, Data} ->
             {database, node()} ! {addition, Data},
             server();
-        {getlog, Return, Tag} ->
-            io:format("Receive: ~p~nTag:~p~n", [Return, Tag]),
+        {getlog, Return, Id} ->
+            RVal = find_by_id(Id),
+            Return ! RVal,
             server();
         {alive, Pid} ->
             Pid ! alive,
@@ -113,18 +108,16 @@ server() ->
             server()
     end.
 
-clear_database() ->
-    {database, node()} ! clear.
-clear_database(Where) ->
-    {database, Where} ! clear.
-
+%% Switches the code out
 codeswitch() ->
     {database, node()} ! restart,
-    {server, node()} ! restart.
+    {server, node()} ! restart,
+    {idproc, node()} ! {restart, self()}.
 codeswitch(Node) ->
     {database, Node} ! restart,
     {server, Node} ! restart.
 
+%% Quits the application
 quit() ->
     {database, node()} ! quit,
     {server, node()} ! quit.
