@@ -1,5 +1,4 @@
 %%Simple data logger
-
 -module(logserver).
 -author("Aaron France").
 
@@ -8,22 +7,19 @@
 %% They will asynchronously start up the server process and the
 %% database process associated with it. Along with the supervisor
 %% processes which watch their state.
--export([run/0, init_table/1]).
-
-%% Exported methods which shouldn't be called directly.
+-export([run/0 ]).
+% Exported methods which shouldn't be called directly.
 -export([goServer/0,goState/2,server/0]).
-
 %% Usability methods.
 -export([addLotsOfData/3,clear_database/1,clear_database/0,
-         codeswitch/1,codeswitch/0,quit/0,quit/1]).
+         codeswitch/1,codeswitch/0,quit/0,quit/1,count/0]).
 
--record(log, {level, host, info}).
+-include("dbfuncs.erl").
 
-init_table(WhichTable) ->
-    mnesia:create_table(WhichTable).
 
 %% Starts/Restarts our services
 run() ->
+    init_table(database_log,[node()]),
     checkState(),
     checkServer().
 
@@ -54,6 +50,7 @@ checkServer() ->
 goState(State, N) ->
     receive
         {addition, Data} ->
+            add_entry(Data),
             goState(dict:store(N, Data, State), N+1);
         {alive, Pid} ->
             Pid ! alive,
@@ -68,6 +65,16 @@ goState(State, N) ->
             logserver:goState(State, N);
         quit ->
             ok
+    end.
+
+count() ->
+    {database, node()} ! {count, self()},
+    receive
+        N ->
+            N
+    after
+        1000 ->
+            no_database
     end.
 
 %% Executes the server and monitors it's process.
@@ -87,8 +94,8 @@ goServer() ->
 %% Server loop.
 server() ->
     receive
-        {newlog, Level, Host, Time, Data} ->
-            {database, node()} ! {addition, {Level, Host, Time, Data}},
+        {newlog, Data} ->
+            {database, node()} ! {addition, Data},
             server();
         {getlog, Return, Tag} ->
             io:format("Receive: ~p~nTag:~p~n", [Return, Tag]),
@@ -129,6 +136,5 @@ quit(Node) ->
 addLotsOfData(Data, _, 0) ->
     Data;
 addLotsOfData(Data, WhereAt, N) ->
-    {Level, Host, Time, D} = Data,
-    {server, WhereAt} ! {newlog, Level, Host, Time, D},
+    {server, WhereAt} ! {newlog, Data},
     addLotsOfData(Data, WhereAt, N-1).
