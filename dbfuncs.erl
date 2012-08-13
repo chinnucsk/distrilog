@@ -70,7 +70,7 @@ add_entry(Data) ->
     mnesia:transaction(F).
 
 %% Finds an entry from the mnesia database using the index id key.
-find_by_id(Id) ->
+find_by_id(_) ->
     F = fun() ->
                 mnesia:match_object(#database_log{})
         end,
