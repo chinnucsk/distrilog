@@ -24,9 +24,12 @@ init_table(WhichTable, Nodes) ->
     case mnesia:create_schema(Nodes) of
         ok ->
             mnesia:start(),
-            mnesia:create_table(WhichTable, []);
+            mnesia:create_table(WhichTable, [{disk_copies, [node()]},
+                                             {record_name, database_log},
+                                             {attributes, record_info(fields, database_log)}]),
+            ok;
         {error, Code} ->
-            Code
+            {error, Code}
     end.
 
 %% Method blocks waiting for requests to return a new id.
@@ -60,7 +63,7 @@ id() ->
 %% Adds an entry into the mnesia database.
 add_entry(Data) ->
     {Level, Host, Time, D} = Data,
-    Record = #database_log{id=id(), level=Level,host=Host,time=Time,info=D},
+    Record = #database_log{id=id(),level=Level,host=Host,time=Time,info=D},
     F = fun() ->
                 mnesia:write(Record)
         end,
@@ -69,7 +72,6 @@ add_entry(Data) ->
 %% Finds an entry from the mnesia database using the index id key.
 find_by_id(Id) ->
     F = fun() ->
-                mnesia:read({data, Id})
+                mnesia:match_object(#database_log{})
         end,
-    {atomic, Data} = mnesia:transaction(F),
-    Data.
+    mnesia:transaction(F).

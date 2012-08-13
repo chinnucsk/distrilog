@@ -13,13 +13,12 @@
 %% Usability methods.
 -export([addLotsOfData/3,codeswitch/1,codeswitch/0,
          quit/0,quit/1,count/0]).
-
 -include("dbfuncs.erl").
 
 
 %% Starts/Restarts our services
 run() ->
-    init_table(database_log, [node()]),
+    io:format("~p~n",[init_table(database_log, [node()])]),
     checkState(),
     checkServer().
 
@@ -50,7 +49,8 @@ checkServer() ->
 goState(N) ->
     receive
         {addition, Data} ->
-            add_entry(Data);
+            io:format("~p~n",[add_entry(Data)]),
+            goState(N);
         {alive, Pid} ->
             Pid ! alive,
             goState(N);
