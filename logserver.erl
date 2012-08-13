@@ -1,14 +1,26 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%       Simple data logger.        %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%Simple data logger
 
 -module(logserver).
 -author("Aaron France").
--export([run/0,
-         goServer/0,
-         goState/2,
-         server/0,
-         addLotsOfData/3]).
+
+%% Call these functions directly.
+%%
+%% They will asynchronously start up the server process and the
+%% database process associated with it. Along with the supervisor
+%% processes which watch their state.
+-export([run/0, init_table/1]).
+
+%% Exported methods which shouldn't be called directly.
+-export([goServer/0,goState/2,server/0]).
+
+%% Usability methods.
+-export([addLotsOfData/3,clear_database/1,clear_database/0,
+         codeswitch/1,codeswitch/0,quit/0,quit/1]).
+
+-record(log, {level, host, info}).
+
+init_table(WhichTable) ->
+    mnesia:create_table(WhichTable).
 
 %% Starts/Restarts our services
 run() ->
@@ -23,7 +35,7 @@ checkState() ->
         alive ->
             {database, node()} ! restart
     after
-        10000 ->
+        100 ->
             register(database, spawn(?MODULE, goState, [dict:new(), 0]))
     end.
 
@@ -34,7 +46,7 @@ checkServer() ->
         alive ->
             {server, node()} ! restart
     after
-        10000 ->
+        100 ->
             spawn(?MODULE, goServer, [])
     end.    
 
@@ -43,8 +55,6 @@ goState(State, N) ->
     receive
         {addition, Data} ->
             goState(dict:store(N, Data, State), N+1);
-        restart ->
-            logserver:goState(State, N);
         {alive, Pid} ->
             Pid ! alive,
             goState(State, N);
@@ -52,11 +62,12 @@ goState(State, N) ->
             Pid ! N,
             goState(State, N);
         clear ->
-            io:format("Clearing ~p entry", [N]),
+            io:format("Clearing ~p entries", [N]),
             goState(dict:new(),0);
-        Something ->
-            io:format("~p~n", [Something]),
-            goState(State, N)
+        restart ->
+            logserver:goState(State, N);
+        quit ->
+            ok
     end.
 
 %% Executes the server and monitors it's process.
@@ -67,7 +78,10 @@ goServer() ->
     receive
         {'EXIT', Pid, restart } ->
             io:format("Catching restart on: ~p~n", [Pid]),
-            logserver:goServer()
+            logserver:goServer();
+        {'EXIT', Pid, quit} ->
+            io:format("Catching quit on: ~p~n", [Pid]),
+            ok
     end.
 
 %% Server loop.
@@ -79,20 +93,40 @@ server() ->
         {getlog, Return, Tag} ->
             io:format("Receive: ~p~nTag:~p~n", [Return, Tag]),
             server();
-        restart ->
-            exit(self(), restart);
         {alive, Pid} ->
             Pid ! alive,
-            server()
+            server();
+        restart ->
+            exit(self(), restart);
+        quit ->
+            exit(self(), quit)
     after
         10000 ->
             io:format("Polling..~n"),
             server()
     end.
 
+clear_database() ->
+    {database, node()} ! clear.
+clear_database(Where) ->
+    {database, Where} ! clear.
+
+codeswitch() ->
+    {database, node()} ! restart,
+    {server, node()} ! restart.
+codeswitch(Node) ->
+    {database, Node} ! restart,
+    {server, Node} ! restart.
+
+quit() ->
+    {database, node()} ! quit,
+    {server, node()} ! quit.
+quit(Node) ->
+    {database, Node} ! quit,
+    {server, Node} ! quit.
 
 %% test methods
-addLotsOfData(Data, WhereAt, 0) ->
+addLotsOfData(Data, _, 0) ->
     Data;
 addLotsOfData(Data, WhereAt, N) ->
     {Level, Host, Time, D} = Data,
