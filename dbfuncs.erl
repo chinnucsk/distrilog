@@ -3,7 +3,6 @@
 
 %% Metadatabase functions
 -export([init_table/2,id/0,id/1]).
-
 %% Direct database manipulation functions
 -export([add_entry/1,find_by_id/1]).
 
@@ -20,17 +19,11 @@ init_table(WhichTable, Nodes) ->
         100 ->
             register(idproc, spawn(?MODULE, id, [0]))
     end,
-
-    case mnesia:create_schema(Nodes) of
-        ok ->
-            mnesia:start(),
-            mnesia:create_table(WhichTable, [{disk_copies, [node()]},
-                                             {record_name, database_log},
-                                             {attributes, record_info(fields, database_log)}]),
-            ok;
-        {error, Code} ->
-            {error, Code}
-    end.
+    mnesia:start(),
+    mnesia:create_schema(Nodes),
+    mnesia:create_table(WhichTable, [{disc_copies, [node()]},
+                                     {record_name, database_log},
+                                     {attributes, record_info(fields, database_log)}]).
 
 %% Method blocks waiting for requests to return a new id.
 %%
@@ -46,7 +39,7 @@ id(N) ->
         {restart, Pid} ->
             Pid ! ok,
             logserver:id(N)            
-    end.
+     end.
 
 %% Requests a new id from the id broker.
 id() ->
@@ -63,7 +56,7 @@ id() ->
 %% Adds an entry into the mnesia database.
 add_entry(Data) ->
     {Level, Host, Time, D} = Data,
-    Record = #database_log{id=id(),level=Level,host=Host,time=Time,info=D},
+    Record = #database_log{id=10,level=1,host=2,time=1,info=1},
     F = fun() ->
                 mnesia:write(Record)
         end,
@@ -75,3 +68,6 @@ find_by_id(_) ->
                 mnesia:match_object(#database_log{})
         end,
     mnesia:transaction(F).
+
+print(Data) ->
+    io:format("~p~n", [Data]).

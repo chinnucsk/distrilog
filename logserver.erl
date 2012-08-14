@@ -48,7 +48,7 @@ terminate(Reason, State) ->
     io:format("Server was killed with reason: ~p~n", [Reason]),
     {Reason, State}.
 
-%% Server request handlers
+%% Sync request handlers
 handle_call({newlog, Data}, _From, State) ->
     io:format("~p~n", [newlog]),
     {reply, add_entry(Data), State};
@@ -57,6 +57,7 @@ handle_call(alive, _From, State) ->
 handle_call(terminate, _From, State) ->
     {stop, terminate, ok, State}.
 
+%% Async request handlers
 handle_cast({newlog, Data}, State) ->
     {reply, add_entry(Data), State};
 handle_cast(terminate, State) ->
